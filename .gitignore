@@ -1,0 +1,25 @@
+# Виртуальное окружение
+.venv/
+venv/
+env/
+
+# Файлы Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Данные и отчёты (генерируются приложением)
+data/
+reports/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
