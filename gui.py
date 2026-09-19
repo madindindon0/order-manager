@@ -48,6 +48,16 @@ TYPE_TO_CLASS: Dict[str, type] = {
     "Корпоративный": CorporateCustomer,
 }
 
+# --- Радужная тема «Kawaii» ---
+#: Семь цветов радуги для полосы и кнопок.
+RAINBOW = ["#FF6B6B", "#FFA94D", "#FFD43B", "#69DB7C", "#4DABF7", "#B197FC", "#F783AC"]
+#: Пастельные «радужные» фоны строк таблиц.
+PASTEL = ["#FFF0F0", "#FFF3E0", "#FFF9C4", "#E8F5E9", "#E3F2FD", "#EDE7F6", "#FCE4EC"]
+#: Аниме-маскоты для интерфейса.
+GIRLS = "✧ (≧◡≦) ✧  ٩(◕‿◕)۶  (づ｡◕‿‿◕｡)づ"
+#: Иконки вкладок.
+TAB_ICONS = ["🌸", "🎀", "✨", "💖"]
+
 
 class OrderManagerApp(tk.Tk):
     """Главное окно приложения.
@@ -61,15 +71,74 @@ class OrderManagerApp(tk.Tk):
     def __init__(self, storage: Storage) -> None:
         super().__init__()
         self.storage = storage
-        self.title("Система учёта заказов интернет-магазина")
+        self.title("Система учёта заказов ★ ٩(◕‿◕)۶ ★")
         self.geometry("1280x760")
         self.minsize(1000, 620)
+        self.configure(bg=PASTEL[6])
 
         self._photo_refs: List[object] = []
 
+        self._apply_rainbow_style()
+        self._build_rainbow_strip()
         self._build_toolbar()
         self._build_notebook()
         self.refresh_all()
+
+    # ------------------------------------------------------------------
+    # Радужная тема «Kawaii»
+    # ------------------------------------------------------------------
+    def _apply_rainbow_style(self) -> None:
+        """Применить радужную палитру через ``ttk.Style`` (clam)."""
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        bg = PASTEL[6]          # фон интерфейса
+        ink = "#5B2A6F"         # текст
+        btn = RAINBOW[6]        # кнопки (розовый)
+        btn_active = "#FF8FBF"
+
+        style.configure("TFrame", background=bg)
+        style.configure("TLabelframe", background=bg, bordercolor=RAINBOW[5], relief="solid")
+        style.configure("TLabelframe.Label", background=bg, foreground=ink, font=("TkDefaultFont", 10, "bold"))
+        style.configure("TLabel", background=bg, foreground=ink)
+        style.configure(
+            "TButton",
+            background=btn,
+            foreground="white",
+            bordercolor=btn,
+            focuscolor=btn,
+            font=("TkDefaultFont", 10, "bold"),
+            padding=(10, 4),
+        )
+        style.map("TButton", background=[("active", btn_active), ("pressed", RAINBOW[4])])
+        style.configure("TNotebook", background=bg, borderwidth=0)
+        style.configure(
+            "TNotebook.Tab",
+            background=RAINBOW[5],
+            foreground="white",
+            font=("TkDefaultFont", 11, "bold"),
+            padding=(14, 7),
+        )
+        style.map("TNotebook.Tab", background=[("selected", RAINBOW[6])])
+        style.configure("Treeview", background="#FFFFFF", fieldbackground="#FFFFFF", foreground=ink, rowheight=26)
+        style.configure("Treeview.Heading", background=RAINBOW[4], foreground="white", font=("TkDefaultFont", 10, "bold"), padding=(6, 4))
+        style.map("Treeview", background=[("selected", RAINBOW[6])], foreground=[("selected", "white")])
+        style.configure("TEntry", fieldbackground="white", foreground=ink)
+        style.configure("TCombobox", fieldbackground="white", foreground=ink)
+        style.configure("TSpinbox", fieldbackground="white", foreground=ink)
+        style.configure("TScrollbar", background=RAINBOW[5], troughcolor=bg)
+
+    def _build_rainbow_strip(self) -> None:
+        """Нарисовать радужную полосу в верхней части окна."""
+        strip = tk.Frame(self, height=8, bg=PASTEL[6])
+        strip.pack(side="top", fill="x")
+        for color in RAINBOW:
+            cell = tk.Frame(strip, bg=color, height=8)
+            cell.pack(side="left", fill="both", expand=True)
+        strip.pack_propagate(False)
 
     # ------------------------------------------------------------------
     # Сборка интерфейса
@@ -78,8 +147,27 @@ class OrderManagerApp(tk.Tk):
         """Создать верхнюю панель с общими кнопками."""
         bar = ttk.Frame(self, padding=(8, 4))
         bar.pack(side="top", fill="x")
-        ttk.Button(bar, text="Демо-данные", command=self._ask_seed).pack(side="left", padx=4)
-        ttk.Button(bar, text="Отчёты (все)", command=self._run_reports).pack(side="left", padx=4)
+
+        style = ttk.Style(self)
+        style.configure("Rainbow1.TButton", background=RAINBOW[0], bordercolor=RAINBOW[0], focuscolor=RAINBOW[0])
+        style.map("Rainbow1.TButton", background=[("active", "#FF8585"), ("pressed", RAINBOW[2])])
+        style.configure("Rainbow2.TButton", background=RAINBOW[4], bordercolor=RAINBOW[4], focuscolor=RAINBOW[4])
+        style.map("Rainbow2.TButton", background=[("active", "#74C0FC"), ("pressed", RAINBOW[3])])
+
+        ttk.Button(bar, text="Демо-данные", style="Rainbow1.TButton", command=self._ask_seed).pack(side="left", padx=4)
+        ttk.Button(bar, text="Отчёты (все)", style="Rainbow2.TButton", command=self._run_reports).pack(side="left", padx=4)
+
+        mascot = tk.Label(
+            bar,
+            text=GIRLS,
+            bg=RAINBOW[6],
+            fg="white",
+            font=("TkDefaultFont", 11, "bold"),
+            padx=10,
+            pady=2,
+        )
+        mascot.pack(side="left", padx=(14, 4))
+
         ttk.Label(bar, text="Хранилище: " + str(self.storage.path), foreground="gray").pack(side="right")
 
     def _build_notebook(self) -> None:
@@ -97,7 +185,7 @@ class OrderManagerApp(tk.Tk):
     def _build_clients_tab(self) -> None:
         """Собрать вкладку управления клиентами."""
         tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  Клиенты  ")
+        self.nb.add(tab, text=f"  {TAB_ICONS[0]} Клиенты  ")
         tab.columnconfigure(1, weight=1)
         tab.rowconfigure(0, weight=1)
 
@@ -157,6 +245,8 @@ class OrderManagerApp(tk.Tk):
         sb = ttk.Scrollbar(right, orient="vertical", command=self.cl_tree.yview)
         sb.grid(row=1, column=2, sticky="ns", pady=6)
         self.cl_tree.configure(yscrollcommand=sb.set)
+        for i, color in enumerate(PASTEL):
+            self.cl_tree.tag_configure(f"row{i}", background=color)
 
     def _on_select_customer(self, _event=None) -> None:
         """Заполнить форму данными выбранного клиента."""
@@ -194,7 +284,7 @@ class OrderManagerApp(tk.Tk):
     def _build_products_tab(self) -> None:
         """Собрать вкладку управления товарами."""
         tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  Товары  ")
+        self.nb.add(tab, text=f"  {TAB_ICONS[1]} Товары  ")
         tab.columnconfigure(1, weight=1)
         tab.rowconfigure(0, weight=1)
 
@@ -247,6 +337,8 @@ class OrderManagerApp(tk.Tk):
         sb = ttk.Scrollbar(right, orient="vertical", command=self.pr_tree.yview)
         sb.grid(row=1, column=2, sticky="ns", pady=6)
         self.pr_tree.configure(yscrollcommand=sb.set)
+        for i, color in enumerate(PASTEL):
+            self.pr_tree.tag_configure(f"row{i}", background=color)
 
     def _on_select_product(self, _event=None) -> None:
         """Заполнить форму данными выбранного товара."""
@@ -273,7 +365,7 @@ class OrderManagerApp(tk.Tk):
     def _build_orders_tab(self) -> None:
         """Собрать вкладку создания и управления заказами."""
         tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  Заказы  ")
+        self.nb.add(tab, text=f"  {TAB_ICONS[2]} Заказы  ")
         tab.columnconfigure(1, weight=1)
         tab.rowconfigure(0, weight=1)
 
@@ -354,6 +446,8 @@ class OrderManagerApp(tk.Tk):
         sb = ttk.Scrollbar(right, orient="vertical", command=self.or_tree.yview)
         sb.grid(row=1, column=1, sticky="ns", pady=6)
         self.or_tree.configure(yscrollcommand=sb.set)
+        for i, color in enumerate(PASTEL):
+            self.or_tree.tag_configure(f"row{i}", background=color)
 
         bottom = ttk.Frame(right)
         bottom.grid(row=2, column=0, columnspan=2, sticky="ew")
@@ -373,7 +467,7 @@ class OrderManagerApp(tk.Tk):
     def _build_analytics_tab(self) -> None:
         """Собрать вкладку анализа и визуализации данных."""
         tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  Аналитика  ")
+        self.nb.add(tab, text=f"  {TAB_ICONS[3]} Аналитика  ")
         tab.columnconfigure(1, weight=1)
         tab.rowconfigure(0, weight=1)
 
@@ -752,6 +846,7 @@ class OrderManagerApp(tk.Tk):
         """Обновить таблицу клиентов с учётом поиска."""
         query = self.cl_search.get().strip().lower()
         self.cl_tree.delete(*self.cl_tree.get_children())
+        row = 0
         for customer in self.storage.customers:
             haystack = f"{customer.name} {customer.email} {customer.phone} {customer.city}".lower()
             if query and query not in haystack:
@@ -760,6 +855,7 @@ class OrderManagerApp(tk.Tk):
                 "",
                 "end",
                 iid=str(customer.id),
+                tags=(f"row{row % len(PASTEL)}",),
                 values=(
                     customer.id,
                     customer.name,
@@ -770,6 +866,7 @@ class OrderManagerApp(tk.Tk):
                     customer.orders_count,
                 ),
             )
+            row += 1
         # Выпадающий список клиентов в форме заказа — из всех клиентов базы,
         # а не только из тех, у кого уже есть заказы.
         self.or_customer["values"] = sorted(
@@ -781,6 +878,7 @@ class OrderManagerApp(tk.Tk):
         """Обновить таблицу товаров с учётом поиска."""
         query = self.pr_search.get().strip().lower()
         self.pr_tree.delete(*self.pr_tree.get_children())
+        row = 0
         for product in self.storage.products:
             haystack = f"{product.name} {product.category.name if product.category else ''}".lower()
             if query and query not in haystack:
@@ -789,6 +887,7 @@ class OrderManagerApp(tk.Tk):
                 "",
                 "end",
                 iid=str(product.id),
+                tags=(f"row{row % len(PASTEL)}",),
                 values=(
                     product.id,
                     product.name,
@@ -797,6 +896,7 @@ class OrderManagerApp(tk.Tk):
                     product.stock,
                 ),
             )
+            row += 1
         # Выпадающий список товаров в форме заказа — из всех товаров базы.
         self.or_product["values"] = sorted(p.name for p in self.storage.products)
 
@@ -817,6 +917,7 @@ class OrderManagerApp(tk.Tk):
             by, reverse = "total", True
         orders = analysis.sort_orders(orders, by=by, reverse=reverse)
 
+        row = 0
         for order in orders:
             if query and query not in f"{order.customer.name} {order.id}".lower():
                 continue
@@ -826,6 +927,7 @@ class OrderManagerApp(tk.Tk):
                 "",
                 "end",
                 iid=str(order.id),
+                tags=(f"row{row % len(PASTEL)}",),
                 values=(
                     order.id,
                     order.order_date,
@@ -835,6 +937,7 @@ class OrderManagerApp(tk.Tk):
                     f"{order.total():.2f}",
                 ),
             )
+            row += 1
 
     def _ask_seed(self) -> None:
         """Перезаполнить хранилище демонстрационными данными."""
