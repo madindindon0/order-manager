@@ -7,7 +7,7 @@
 - читает/пишет рабочую книгу ``store.xlsx`` с листами
   ``clients``, ``products``, ``orders``, ``order_items``, ``meta``;
 - предоставляет CRUD-операции для клиентов, товаров и заказов;
-- выполняет импорт и экспорт данных в форматах CSV и JSON;
+- выполняет импорт и экспорт данных в формате XLSX;
 - автоматически сохраняет изменения после каждой операции.
 
 Дополнительно модуль содержит генератор демонстрационных данных
@@ -17,12 +17,10 @@
 
 from __future__ import annotations
 
-import csv
-import json
 import os
 import random
 import tempfile
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -30,6 +28,7 @@ import openpyxl
 from openpyxl import Workbook, load_workbook
 
 import models
+import validators
 from models import (
     Category,
     CorporateCustomer,
@@ -344,7 +343,28 @@ class Storage:
     # CRUD: клиенты
     # ------------------------------------------------------------------
     def add_customer(self, customer: Customer) -> Customer:
-        """Добавить клиента в хранилище."""
+        """Добавить клиента в хранилище.
+
+        Email и телефон клиента должны быть уникальными: если в
+        хранилище уже есть клиент с таким же email или телефоном,
+        поднимается :class:`StorageError`.
+
+        Parameters
+        ----------
+        customer : Customer
+            Добавляемый клиент (без идентификатора).
+
+        Returns
+        -------
+        Customer
+            Клиент с назначенным идентификатором.
+
+        Raises
+        ------
+        StorageError
+            Если клиент с таким email или телефоном уже существует.
+        """
+        self._ensure_unique_contact(customer)
         customer.id = self._counters["clients"]
         self._counters["clients"] += 1
         self.customers.append(customer)
@@ -356,13 +376,66 @@ class Storage:
         return next((c for c in self.customers if c.id == customer_id), None)
 
     def update_customer(self, customer: Customer) -> None:
-        """Обновить клиента по идентификатору."""
+        """Обновить клиента по идентификатору.
+
+        Контактные данные обновляемого клиента проверяются на
+        уникальность среди остальных клиентов хранилища.
+
+        Parameters
+        ----------
+        customer : Customer
+            Клиент с новыми данными и уже назначенным идентификатором.
+
+        Raises
+        ------
+        StorageError
+            Если клиент с id не найден или другой клиент уже
+            использует такой же email/телефон.
+        """
         for idx, existing in enumerate(self.customers):
             if existing.id == customer.id:
+                self._ensure_unique_contact(customer, exclude_id=customer.id)
                 self.customers[idx] = customer
                 self._save()
                 return
         raise StorageError(f"Клиент с id={customer.id} не найден")
+
+    def _ensure_unique_contact(
+        self, customer: Customer, exclude_id: Optional[int] = None
+    ) -> None:
+        """Проверить уникальность email и телефона клиента.
+
+        Email сравнивается без учёта регистра, телефон — в каноническом
+        виде через :func:`validators.normalize_phone`, поэтому записи
+        ``+7 (900) 123-45-67`` и ``+79001234567`` считаются дубликатами.
+
+        Parameters
+        ----------
+        customer : Customer
+            Проверяемый клиент.
+        exclude_id : Optional[int]
+            Идентификатор клиента, исключаемый из проверки
+            (используется при обновлении, чтобы не считать
+            дубликатом сам обновляемый клиент).
+
+        Raises
+        ------
+        StorageError
+            Если найден другой клиент с таким же email или телефоном.
+        """
+        email = customer.email.lower()
+        phone = validators.normalize_phone(customer.phone)
+        for existing in self.customers:
+            if existing.id == exclude_id:
+                continue
+            if existing.email.lower() == email:
+                raise StorageError(
+                    f"Клиент с email {customer.email!r} уже существует (id={existing.id})"
+                )
+            if validators.normalize_phone(existing.phone) == phone:
+                raise StorageError(
+                    f"Клиент с телефоном {customer.phone!r} уже существует (id={existing.id})"
+                )
 
     def delete_customer(self, customer_id: int) -> None:
         """Удалить клиента и связанные с ним заказы."""
@@ -407,8 +480,8 @@ class Storage:
     # ------------------------------------------------------------------
     # Импорт / экспорт
     # ------------------------------------------------------------------
-    def export_csv(self, entity: str, dest_dir: str | Path) -> Path:
-        """Экспортировать сущность в CSV.
+    def export_xlsx(self, entity: str, dest_dir: str | Path) -> Path:
+        """Экспортировать сущность в рабочую книгу Excel (``.xlsx``).
 
         Parameters
         ----------
@@ -427,32 +500,24 @@ class Storage:
         StorageError
             При ошибке записи файла или неизвестной сущности.
         """
-        return self._export_rows(entity, dest_dir, "csv")
-
-    def export_json(self, entity: str, dest_dir: str | Path) -> Path:
-        """Экспортировать сущность в JSON."""
-        return self._export_rows(entity, dest_dir, "json")
-
-    def _export_rows(self, entity: str, dest_dir: str | Path, fmt: str) -> Path:
         dest_dir = Path(dest_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
-        data = self._entity_data(entity)
         columns = SHEET_COLUMNS.get(entity)
         if columns is None:
             raise StorageError(f"Неизвестная сущность: {entity}")
-        name = f"{entity}.{fmt}"
-        path = dest_dir / name
+        path = dest_dir / f"{entity}.xlsx"
         try:
-            if fmt == "csv":
-                with open(path, "w", newline="", encoding="utf-8-sig") as fh:
-                    writer = csv.DictWriter(fh, fieldnames=columns)
-                    writer.writeheader()
-                    writer.writerows(data)
-            else:
-                with open(path, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh, ensure_ascii=False, indent=2)
+            wb = Workbook()
+            ws = wb.active
+            ws.title = entity
+            ws.append(columns)
+            for row in self._entity_data(entity):
+                ws.append([row.get(col) for col in columns])
+            wb.save(path)
         except OSError as exc:
             raise StorageError(f"Не удалось экспортировать {entity} в {path}: {exc}") from exc
+        finally:
+            wb.close()
         return path
 
     def _entity_data(self, entity: str) -> List[dict]:
@@ -465,8 +530,8 @@ class Storage:
             return [o.to_dict() for o in self.orders]
         raise StorageError(f"Неизвестная сущность: {entity}")
 
-    def import_csv(self, entity: str, file_path: str | Path) -> int:
-        """Импортировать данные сущности из CSV-файла.
+    def import_xlsx(self, entity: str, file_path: str | Path) -> int:
+        """Импортировать данные сущности из XLSX-файла.
 
         Импортированные записи добавляются к существующим
         (слияние с назначением новых идентификаторов).
@@ -476,32 +541,78 @@ class Storage:
         entity : str
             Сущность: ``clients``, ``products`` или ``orders``.
         file_path : str | Path
-            Путь к CSV-файлу.
+            Путь к XLSX-файлу.
 
         Returns
         -------
         int
             Количество импортированных записей.
         """
-        file_path = Path(file_path)
-        try:
-            with open(file_path, newline="", encoding="utf-8-sig") as fh:
-                rows = list(csv.DictReader(fh))
-        except OSError as exc:
-            raise StorageError(f"Не удалось открыть {file_path}: {exc}") from exc
+        rows = self._read_xlsx_rows(file_path)
         return self._import_rows(entity, rows)
 
-    def import_json(self, entity: str, file_path: str | Path) -> int:
-        """Импортировать данные сущности из JSON-файла."""
+    def _read_xlsx_rows(self, file_path: str | Path) -> List[dict]:
+        """Прочитать записи с первого листа рабочей книги Excel.
+
+        Первая строка листа считается заголовком с именами колонок,
+        остальные — строками данных. Даты нормализуются в формат ISO.
+
+        Parameters
+        ----------
+        file_path : str | Path
+            Путь к XLSX-файлу.
+
+        Returns
+        -------
+        List[dict]
+            Список записей в виде словарей «колонка -> значение».
+
+        Raises
+        ------
+        StorageError
+            Если файл невозможно прочитать или он не содержит данных.
+        """
         file_path = Path(file_path)
         try:
-            with open(file_path, encoding="utf-8") as fh:
-                rows = json.load(fh)
-        except (OSError, json.JSONDecodeError) as exc:
-            raise StorageError(f"Не удалось прочитать JSON {file_path}: {exc}") from exc
-        if not isinstance(rows, list):
-            raise StorageError("JSON должен содержать список записей")
-        return self._import_rows(entity, rows)
+            wb = load_workbook(file_path, read_only=True, data_only=True)
+        except Exception as exc:
+            raise StorageError(f"Не удалось прочитать файл {file_path}: {exc}") from exc
+        try:
+            ws = wb.worksheets[0]
+            rows_iter = ws.iter_rows(values_only=True)
+            try:
+                header = next(rows_iter)
+            except StopIteration:
+                header = None
+            if not header:
+                raise StorageError(f"Файл {file_path} не содержит таблицы с данными")
+            columns = [str(value).strip() for value in header]
+            rows: List[dict] = []
+            for values in rows_iter:
+                if values is None or all(value is None for value in values):
+                    continue
+                rows.append(
+                    {
+                        column: self._normalize_cell(value)
+                        for column, value in zip(columns, values)
+                    }
+                )
+        finally:
+            wb.close()
+        return rows
+
+    @staticmethod
+    def _normalize_cell(value):
+        """Нормализовать значение ячейки Excel для импорта.
+
+        Ячейки с датами (``datetime``/``date``) приводятся к строке
+        в формате ISO ``YYYY-MM-DD``, остальные значения не меняются.
+        """
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
+        return value
 
     def _import_rows(self, entity: str, rows: List[dict]) -> int:
         """Импортировать записи сущности (внутренняя логика)."""

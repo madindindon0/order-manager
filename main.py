@@ -80,9 +80,6 @@ def main(argv=None) -> int:
 
     try:
         storage = Storage(args.path)
-        if not storage.customers and not storage.products:
-            print("Хранилище пустое — загружаю демонстрационные данные...")
-            storage.seed_demo_data()
     except StorageError as exc:
         print(f"Ошибка хранилища: {exc}", file=sys.stderr)
         return 1

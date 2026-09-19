@@ -131,10 +131,8 @@ class OrderManagerApp(tk.Tk):
 
         io = ttk.Frame(form)
         io.grid(row=7, column=0, columnspan=2, pady=(12, 0))
-        ttk.Button(io, text="Экспорт CSV", command=lambda: self.export_dialog("clients", "csv")).pack(fill="x", pady=2)
-        ttk.Button(io, text="Экспорт JSON", command=lambda: self.export_dialog("clients", "json")).pack(fill="x", pady=2)
-        ttk.Button(io, text="Импорт CSV", command=lambda: self.import_dialog("clients", "csv")).pack(fill="x", pady=2)
-        ttk.Button(io, text="Импорт JSON", command=lambda: self.import_dialog("clients", "json")).pack(fill="x", pady=2)
+        ttk.Button(io, text="Экспорт XLSX", command=lambda: self.export_dialog("clients", "xlsx")).pack(fill="x", pady=2)
+        ttk.Button(io, text="Импорт XLSX", command=lambda: self.import_dialog("clients", "xlsx")).pack(fill="x", pady=2)
 
         right = ttk.Frame(tab)
         right.grid(row=0, column=1, sticky="nsew")
@@ -225,10 +223,8 @@ class OrderManagerApp(tk.Tk):
 
         io = ttk.Frame(form)
         io.grid(row=5, column=0, columnspan=2, pady=(12, 0))
-        ttk.Button(io, text="Экспорт CSV", command=lambda: self.export_dialog("products", "csv")).pack(fill="x", pady=2)
-        ttk.Button(io, text="Экспорт JSON", command=lambda: self.export_dialog("products", "json")).pack(fill="x", pady=2)
-        ttk.Button(io, text="Импорт CSV", command=lambda: self.import_dialog("products", "csv")).pack(fill="x", pady=2)
-        ttk.Button(io, text="Импорт JSON", command=lambda: self.import_dialog("products", "json")).pack(fill="x", pady=2)
+        ttk.Button(io, text="Экспорт XLSX", command=lambda: self.export_dialog("products", "xlsx")).pack(fill="x", pady=2)
+        ttk.Button(io, text="Импорт XLSX", command=lambda: self.import_dialog("products", "xlsx")).pack(fill="x", pady=2)
 
         right = ttk.Frame(tab)
         right.grid(row=0, column=1, sticky="nsew")
@@ -368,10 +364,8 @@ class OrderManagerApp(tk.Tk):
         self.or_change_status.pack(side="left", padx=4)
         ttk.Button(bottom, text="Применить статус", command=self.change_order_status).pack(side="left", padx=4)
         ttk.Button(bottom, text="Удалить заказ", command=self.delete_order).pack(side="left", padx=4)
-        ttk.Button(bottom, text="Экспорт CSV", command=lambda: self.export_dialog("orders", "csv")).pack(side="right", padx=2)
-        ttk.Button(bottom, text="Экспорт JSON", command=lambda: self.export_dialog("orders", "json")).pack(side="right", padx=2)
-        ttk.Button(bottom, text="Импорт JSON", command=lambda: self.import_dialog("orders", "json")).pack(side="right", padx=2)
-        ttk.Button(bottom, text="Импорт CSV", command=lambda: self.import_dialog("orders", "csv")).pack(side="right", padx=2)
+        ttk.Button(bottom, text="Экспорт XLSX", command=lambda: self.export_dialog("orders", "xlsx")).pack(side="right", padx=2)
+        ttk.Button(bottom, text="Импорт XLSX", command=lambda: self.import_dialog("orders", "xlsx")).pack(side="right", padx=2)
 
     # ------------------------------------------------------------------
     # Вкладка «Аналитика»
@@ -419,7 +413,7 @@ class OrderManagerApp(tk.Tk):
             messagebox.showinfo("Готово", f"Клиент «{customer.name}» добавлен (id={customer.id})")
             self._clear_customer_form()
             self.refresh_customers()
-        except (ValidationError, TypeError, ValueError) as exc:
+        except (ValidationError, TypeError, ValueError, StorageError) as exc:
             messagebox.showerror("Ошибка", str(exc))
 
     def update_customer(self) -> None:
@@ -590,10 +584,16 @@ class OrderManagerApp(tk.Tk):
         except (ValidationError, TypeError, ValueError, StorageError) as exc:
             messagebox.showerror("Ошибка", str(exc))
 
-    @staticmethod
-    def _product_from_line(line: str) -> Product:
-        """Извлечь товар из строки списка позиций (до `` x``)."""
+    def _product_from_line(self, line: str) -> Product:
+        """Извлечь товар из строки списка позиций (до `` x``).
+
+        Цена берётся из актуального товара в хранилище, чтобы
+        в заказ попадала реальная стоимость, а не ноль.
+        """
         name = line.rsplit(" x", 1)[0]
+        for product in self.storage.products:
+            if product.name == name:
+                return product
         return Product(name=name, price=0.0)
 
     def _quantity_from_line(self, line: str) -> int:
@@ -727,8 +727,8 @@ class OrderManagerApp(tk.Tk):
             messagebox.showerror("Ошибка", str(exc))
 
     def import_dialog(self, entity: str, fmt: str) -> None:
-        """Импортировать сущность из файла (CSV/JSON)."""
-        filetypes = [("CSV", "*.csv")] if fmt == "csv" else [("JSON", "*.json")]
+        """Импортировать сущность из файла (XLSX)."""
+        filetypes = [("Excel", "*.xlsx")]
         path = filedialog.askopenfilename(title="Выберите файл", filetypes=filetypes)
         if not path:
             return
@@ -770,6 +770,12 @@ class OrderManagerApp(tk.Tk):
                     customer.orders_count,
                 ),
             )
+        # Выпадающий список клиентов в форме заказа — из всех клиентов базы,
+        # а не только из тех, у кого уже есть заказы.
+        self.or_customer["values"] = sorted(
+            {f"{c.id} — {c.name}" for c in self.storage.customers},
+            key=lambda s: int(s.split(" ")[0]),
+        )
 
     def refresh_products(self) -> None:
         """Обновить таблицу товаров с учётом поиска."""
@@ -791,6 +797,8 @@ class OrderManagerApp(tk.Tk):
                     product.stock,
                 ),
             )
+        # Выпадающий список товаров в форме заказа — из всех товаров базы.
+        self.or_product["values"] = sorted(p.name for p in self.storage.products)
 
     def refresh_orders(self) -> None:
         """Обновить таблицу заказов с учётом фильтров и сортировки."""
@@ -809,9 +817,7 @@ class OrderManagerApp(tk.Tk):
             by, reverse = "total", True
         orders = analysis.sort_orders(orders, by=by, reverse=reverse)
 
-        customer_combobox = []
         for order in orders:
-            customer_combobox.append(f"{order.customer.id} — {order.customer.name}")
             if query and query not in f"{order.customer.name} {order.id}".lower():
                 continue
             if status_filter != "Все" and order.status.value != status_filter:
@@ -829,7 +835,6 @@ class OrderManagerApp(tk.Tk):
                     f"{order.total():.2f}",
                 ),
             )
-        self.or_customer["values"] = sorted(set(customer_combobox), key=lambda s: int(s.split(" ")[0]))
 
     def _ask_seed(self) -> None:
         """Перезаполнить хранилище демонстрационными данными."""
